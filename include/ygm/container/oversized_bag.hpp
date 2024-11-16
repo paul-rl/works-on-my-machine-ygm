@@ -17,7 +17,7 @@
 
 namespace ygm::container {
 
-/** @todo ----------------------------------------------unchanged----------------------------------------------*/
+/** @todo ----------------------------------------------unchanged---------------------------------------------- */
 template <typename Item>
 class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>, std::tuple<Item>>,
             public detail::base_count<oversized_bag<Item>, std::tuple<Item>>,
@@ -46,7 +46,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     }
     m_comm.barrier();
   }
-  /** @todo --------------------------------------------end unchanged--------------------------------------------*/
+  /** @todo --------------------------------------------end unchanged-------------------------------------------- */
 
   /**
    * @brief Construct a new oversized bag object from a directory of files, arguments ect could be different
@@ -59,7 +59,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
      */
   }
 
-  /** @todo ----------------------------------------------unchanged----------------------------------------------*/
+  /** @todo ----------------------------------------------unchanged---------------------------------------------- */
   template <typename STLContainer>
   oversized_bag(ygm::comm          &comm,
       const STLContainer &cont) requires detail::STLContainer<STLContainer> &&
@@ -84,14 +84,14 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
 
     m_comm.barrier();
   }
-  /** @todo --------------------------------------------end unchanged--------------------------------------------*/
+  /** @todo --------------------------------------------end unchanged-------------------------------------------- */
 
   /**
    * @todo we'll need to close all of the files we opened
    */
   ~oversized_bag() { m_comm.barrier(); }
 
-  /** @todo ----------------------------------------------unchanged----------------------------------------------*/
+  /** @todo ----------------------------------------------unchanged---------------------------------------------- */
   oversized_bag(const self_type &other)  // If I remove const it compiles
       : m_comm(other.comm()), pthis(this), partitioner(other.comm()) {
     pthis.check(m_comm);
@@ -106,10 +106,10 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   }
 
   oversized_bag &operator=(const self_type &other) { return *this = oversized_bag(other); }
-  /** @todo --------------------------------------------end unchanged--------------------------------------------*/
+  /** @todo --------------------------------------------end unchanged-------------------------------------------- */
 
-  /** @todo This might be hard to reimplement, we'll need to look at if we can swap on fstream object or if we'll have to swap data
-   * then have other.open() and this->open() to reopen the insert file
+  /** @todo This might be hard to reimplement, we'll need to look at if we can swap on fstream object or if we'll have 
+   * to swap data then have other.open() and this->open() to reopen the insert file
    */
   oversized_bag &operator=(self_type &&other) noexcept {
     /* ---This is the original code---
@@ -128,7 +128,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     m_comm.async(dest, inserter, this->get_ygm_ptr(), value);
   }
 
-  /** @todo ----------------------------------------------unchanged----------------------------------------------*/
+  /** @todo ----------------------------------------------unchanged---------------------------------------------- */
   void async_insert(const std::vector<Item> &values, int dest) {
     auto inserter = [](auto pcont, const std::vector<Item> &values) {
       for (const auto &v : values) {
@@ -138,7 +138,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
 
     m_comm.async(dest, inserter, this->get_ygm_ptr(), values);
   }
-  /** @todo --------------------------------------------end unchanged--------------------------------------------*/
+  /** @todo --------------------------------------------end unchanged-------------------------------------------- */
 
   /** @todo */
   void local_insert(const Item &val) { /*---This is the original code--- m_local_bag.push_back(val); */ }
