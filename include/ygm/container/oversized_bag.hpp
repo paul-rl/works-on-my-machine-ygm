@@ -313,6 +313,53 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   /** @todo */
   void local_swap(self_type &other) { /* ---This is the original code--- m_local_bag.swap(other.m_local_bag); */ }
 
+  void add_to_ygm_file(const Item &val) {
+
+  }
+
+  void add_to_ygm_file(const std::vector<Item> &val) {
+    for(const auto &v : val) {
+      add_to_ygm_file(v);
+    }
+  }
+
+  /** @todo this signature might be wrong, it might require an int, will have to dig into the partitioner */
+  Item get_from_ygm_file(Item i) {
+
+  }
+
+  /** @todo this signature might be wrong, it might require an int, will have to dig into the partitioner */
+  Item get_from_ygm_file(Item i, Function fn) {
+  }
+
+  /** @todo this signature might be wrong, it might require a vector<int>, will have to dig into the partitioner */
+  std::vector<Item> get_from_ygm_file(std::vector<Item> i) {
+
+  }
+
+  /** @todo this signature might be wrong, it might require a vector<int>, will have to dig into the partitioner */
+  std::vector<Item> get_from_ygm_file(std::vector<Item> i, Function fn) {
+
+  }
+
+  std::vector<Item> get_from_ygm_file(int file_id) {
+
+  }
+
+  std::vector<Item> get_from_ygm_file(int file_id, Function fn) {
+
+  }
+
+  std::vector<Item> get_all_ygm_files() {
+
+  }
+
+  std::vector<Item> get_all_ygm_files(Function fn) {
+
+  }
+
+
+
   ygm::comm                       &m_comm;
   /** @todo the default bag uses an std::vector as storage, we'll need a few things to do the oversized version. 
    * My initial thoughts will be the following:
@@ -323,6 +370,8 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
    * 5) base_filename to keep track of the file name
    * 6) base_directory to keep track of the directory
    * 7) size_t file_number to keep track of the number of files we've created
+   * 8) either std::set or std::vector to keep track of the active files, theres a chance we end up having to rewrite a
+   *    file which would require removing the existing one if we update in place. We can think about it
    * 
    * Might need more or less than the above, this is just initial thoughts/design
   
