@@ -275,25 +275,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
 
   /** @todo testing needed */  
   void deserialize(const std::string &fname) {
-    /*---This is the original code---
     m_comm.barrier();
-
-    std::string   rank_fname = fname + std::to_string(m_comm.rank());
-    std::ifstream is(rank_fname, std::ios::binary);
-
-    cereal::JSONInputArchive iarchive(is);
-    int                      comm_size;
-    // iarchive(m_local_bag, m_round_robin, comm_size);
-    iarchive(m_local_bag, comm_size);
-
-    if (comm_size != m_comm.size()) {
-      m_comm.cerr0(
-          "Attempting to deserialize bag_impl using communicator of "
-          "different size than serialized with");
-    }
-    */
-    m_comm.barrier();
-
     std::string   rank_fname = fname + std::to_string(m_comm.rank());
     std::ifstream is(rank_fname, std::ios::binary);
     /**
@@ -409,16 +391,6 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
  private:
    /** @todo testing needed */
   std::vector<value_type> local_pop(int n) {
-    /*---This is the original code---
-    YGM_ASSERT_RELEASE(n <= local_size());
-
-    size_t                  new_size  = local_size() - n;
-    auto                    pop_start = m_local_bag.begin() + new_size;
-    std::vector<value_type> ret;
-    ret.assign(pop_start, m_local_bag.end());
-    m_local_bag.resize(new_size);
-    return ret;
-    */
     YGM_ASSERT_RELEASE(n <= local_size());
     std::vector<value_type> ret;
     std::vector<value_type> temp_storage;
@@ -436,7 +408,6 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
 
   /** @todo testing needed*/
   void local_swap(self_type &other) { 
-    /* ---This is the original code--- m_local_bag.swap(other.m_local_bag); */
     this->m_files.swap(other.m_files); 
     std::swap(this->m_local_size, other.m_local_size);
     std::swap(this->m_base_filename, other.m_base_filename);
@@ -446,7 +417,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     m_files.push_back(ygm_file(generate_filename(m_files.size), m_files.size()));
   }
 
-  inline void vector_from_file(ygm_file &file, std::vector<Item>& storage) {
+  void vector_from_file(ygm_file &file, std::vector<Item>& storage) {
     file.file_io.seekg(0, std::ios::beg);
     while(file.file_io.peek() != EOF) {
       Item temp;
@@ -456,7 +427,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     }
   }
 
-  inline void vector_to_file(ygm_file &file, std::vector<Item>& storage) {
+  void vector_to_file(ygm_file &file, std::vector<Item>& storage) {
     file.file_io.seekg(0, std::ios::beg);
     while(file.file_io.peek() != EOF) {
       Item temp;
@@ -472,7 +443,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
    * shrink, then when we write back to the file there is data left at the end. this might be fixed by adding an EOF
    * character to the end of the file, then additional writes occur it would overwrite the entirety of the stale data.
    */
-  inline void reset_file(std::vector<Item>& storage) {
+  void reset_file(std::vector<Item>& storage) {
     auto cur_file = m_files.back();
     std::string fname = generate_filename(file.id);
     cur_file.back.file_io.close();
