@@ -5,6 +5,9 @@
 
 #pragma once
 
+#include <fstream>
+#include <filesystem>
+#include <cereal/archives/binary.hpp>
 #include <cereal/archives/json.hpp>
 #include <initializer_list>
 #include <ygm/container/container_traits.hpp>
@@ -31,13 +34,55 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   using size_type      = size_t;
   using for_all_args   = std::tuple<Item>;
   using container_type = ygm::container::bag_tag;
+
+
+  struct ygm_file {
+    static const m_threshold = 1000000; //set to 1 million for now, we should let this be configurable
+
+    std::fstream                    file_io;
+    cereal::BinaryOutputArchive     out;
+    cereal::BinaryInputArchive      in;
+    size_t                          id;
+    size_t                          size;
+    bool                            active;
+
+    ygm_file(std::string filename, size_t file_id) : 
+              file_io(filename, std::ios::binary), out(file_io), in(file_io), 
+              file_id(file_id), file_size(0), active(true) {}
+    
+    ~ygm_file() { if (file_io.is_open()) file_io.close(); }
+
+    bool in(Item &data) {
+      if (!active) return false;
+
+      if (!file_io.eof) file_io.seekg(0, std::ios::end);
+      
+      in(data);
+      size++;
+
+      if (size > m_threshold)
+        active = false;
+
+      return true;
+    }
+
+    bool out(Item &data) {
+      if (file_io.peek() == EOF) return false;
+      else {
+        out(data);
+        return true;
+      }
+    }
+  };
   
   oversized_bag(ygm::comm &comm) : m_comm(comm), pthis(this), partitioner(comm) {
+    open_new_file();
     pthis.check(m_comm);
   }
 
   oversized_bag(ygm::comm &comm, std::initializer_list<Item> l)
       : m_comm(comm), pthis(this), partitioner(comm) {
+    open_new_file();
     pthis.check(m_comm);
     if (m_comm.rank0()) {
       for (const Item &i : l) {
@@ -53,6 +98,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
    */
   oversized_bag(ygm::comm &comm, std::string dir)
       : m_comm(comm), pthis(this), partitioner(comm) {
+    open_new_file();
     pthis.check(m_comm);
     /**
      * @todo Implement this
@@ -65,6 +111,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       const STLContainer &cont) requires detail::STLContainer<STLContainer> &&
       std::convertible_to<typename STLContainer::value_type, Item>
       : m_comm(comm), pthis(this), partitioner(comm) {
+    open_new_file();
     pthis.check(m_comm);
 
     for (const Item &i : cont) {
@@ -78,6 +125,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       const YGMContainer &yc) requires detail::HasForAll<YGMContainer> &&
       detail::SingleItemTuple<typename YGMContainer::for_all_args>
       : m_comm(comm), pthis(this), partitioner(comm) {
+    open_new_file();
     pthis.check(m_comm);
 
     yc.for_all([this](const Item &value) { this->async_insert(value); });
@@ -140,47 +188,108 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   }
   /** @todo --------------------------------------------end unchanged-------------------------------------------- */
 
-  /** @todo */
-  void local_insert(const Item &val) { /*---This is the original code--- m_local_bag.push_back(val); */ }
+  /** @todo testing needed*/
+  void local_insert(const Item &val) {
+    if (!m_files.back().active) {
+      open_new_file();
+    }
+    m_files.back().in(val);
+    m_local_size++;
+  }
 
   /** @todo */
   void local_clear() { /*---This is the original code--- m_local_bag.clear(); */ }
 
-  /** @todo */
-  size_t local_size() const { /*---This is the original code--- return m_local_bag.size(); */ }
+  /** @todo testing needed */
+  size_t local_size() const { m_local_size; }
 
-  /** @todo */
+  /** @todo testing needed */
   size_t local_count(const value_type &val) const {
-    /*---This is the original code--- 
-    return std::count(m_local_bag.begin(), m_local_bag.end(), val);
-    */
+    size_t count = 0;
+    for (auto &file : m_files) {
+      if (file.active) {
+        file.file_io.seekg(0, std::ios::beg);
+        while(file.file_io.peek() != EOF) {
+          Item temp;
+          if (file.in(temp)) {
+            if (temp == val) count++;
+          }
+        }
+      }
+    }
   }
 
-  /** @todo */
+  /** @todo testing needed */
   template <typename Function>
   void local_for_all(Function fn) {
-    /*---This is the original code---
-    std::for_each(m_local_bag.begin(), m_local_bag.end(), fn);
-    */
+   std::vector<Item> temp_storage;
+    for (auto &file : m_files) {
+      file.file_io.seekg(0, std::ios::beg);
+      while(file.file_io.peek() != EOF) {
+        Item temp;
+        if (file.out(temp)) {
+          fn(temp);
+          temp_storage.push_back(temp);
+        }
+      }
+
+      file.file_io.seekg(0, std::ios::beg);
+      for (auto &item : temp_storage) {
+        file.in(item);
+      }
+      /** @todo this section may or may not be needed, its a bit expensive but it applies the function on
+       * all the items in the file. Becausee the function could modify the contents stored we need to re-write
+       * the items back into the file. For the moment, I'm using filesystem::remove() to delete the file, there
+       * may be a better way to do this perfomance wise. The worry from seeking back the the start of the file is
+       * in hte case an item had a std::vector or other container as a member, the size of the vector could drastically
+       * shrink, then when we write back to the file there is data left at the end. this might be fixed by adding an EOF
+       * character to the end of the file, then additional writes occur it would overwrite the entirety of the stale data.
+       */
+      std::string fname = generate_filename()
+      file.file_io.close();
+      std::filesystem::remove(fname);
+      file.file_io.open(fname, std::ios::binary);
+      file.size = 0;
+      file.in  = cereal::BinaryInputArchive(file.file_io);
+      file.out = cereal::BinaryOutputArchive(file.file_io);
+      temp_storage.clear();
+    }
   }
 
-  /** @todo */
+  /** @todo testing needed */
   template <typename Function>
   void local_for_all(Function fn) const {
-    /*---This is the original code---
-    std::for_each(m_local_bag.cbegin(), m_local_bag.cend(), fn);
-    */
+    for (auto &file : m_files) {
+      file.file_io.seekg(0, std::ios::beg);
+      while(file.file_io.peek() != EOF) {
+        Item temp;
+        if (file.out(temp)) {
+          fn(temp);
+        }
+      }
+    }
   }
   
-  /** @todo */  
+  /** @todo testing needed */  
   void serialize(const std::string &fname) {
-    /*---This is the original code---
     m_comm.barrier();
     std::string   rank_fname = fname + std::to_string(m_comm.rank());
     std::ofstream os(rank_fname, std::ios::binary);
     cereal::JSONOutputArchive oarchive(os);
-    oarchive(m_local_bag, m_comm.size());
-    */
+    for (auto &file : m_files) {
+      file.file_io.seekg(0, std::ios::beg);
+      while(file.file_io.peek() != EOF) {
+        Item temp;
+        file.in(temp);
+        /**
+         * @todo I'm not sure if this is the correct way to serialize this as JSON. The issue will be we are serializing
+         * potentially huge quantities of data. In the regular bag example everything can likely be stored in a single
+         * file, for our cases though we might need to see if we can attatch not only the comm_size, but also the file.id
+         * as it may not be possible to store the entirety of data in memory when we try and deserialize it.
+         */
+        oarchive(temp, m_comm.size());
+      }
+    }
   }
 
   /** @todo */  
@@ -202,6 +311,27 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
           "different size than serialized with");
     }
     */
+    m_comm.barrier();
+
+    std::string   rank_fname = fname + std::to_string(m_comm.rank());
+    std::ifstream is(rank_fname, std::ios::binary);
+    /**
+     * @todo We should look at if we can split things by file id instead of just the comm_size given.
+     */
+    cereal::JSONInputArchive iarchive(is);
+    int                      comm_size;
+    std::vector<Item> temp_storage;
+    iarchive(temp_storage, comm_size);
+
+    for (Item &item : temp_storage) {
+      local_insert(item);
+    }
+
+    if (comm_size != m_comm.size()) {
+      m_comm.cerr0(
+          "Attempting to deserialize bag_impl using communicator of "
+          "different size than serialized with");
+    }
   }
 
   /** @todo */  
@@ -313,72 +443,21 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   /** @todo */
   void local_swap(self_type &other) { /* ---This is the original code--- m_local_bag.swap(other.m_local_bag); */ }
 
-  void add_to_ygm_file(const Item &val) {
-
+  inline void open_new_file() {
+    m_files.push_back(ygm_file(generate_filename(), m_files.size()));
   }
 
-  void add_to_ygm_file(const std::vector<Item> &val) {
-    for(const auto &v : val) {
-      add_to_ygm_file(v);
-    }
+  inline std::string generate_filename() const {
+    return std::string(m_base_filename + std::string(this->m_comm.rank()) + "_" + std::to_string(m_files.size()));
   }
 
-  /** @todo this signature might be wrong, it might require an int, will have to dig into the partitioner */
-  Item get_from_ygm_file(Item i) {
+  ygm::comm                        &m_comm;
+  std::vector<ygm_file>             m_files; 
+  size_t                            m_local_size;
+  size_t                            m_threshold;
 
-  }
-
-  /** @todo this signature might be wrong, it might require an int, will have to dig into the partitioner */
-  Item get_from_ygm_file(Item i, Function fn) {
-  }
-
-  /** @todo this signature might be wrong, it might require a vector<int>, will have to dig into the partitioner */
-  std::vector<Item> get_from_ygm_file(std::vector<Item> i) {
-
-  }
-
-  /** @todo this signature might be wrong, it might require a vector<int>, will have to dig into the partitioner */
-  std::vector<Item> get_from_ygm_file(std::vector<Item> i, Function fn) {
-
-  }
-
-  std::vector<Item> get_from_ygm_file(int file_id) {
-
-  }
-
-  std::vector<Item> get_from_ygm_file(int file_id, Function fn) {
-
-  }
-
-  std::vector<Item> get_all_ygm_files() {
-
-  }
-
-  std::vector<Item> get_all_ygm_files(Function fn) {
-
-  }
-
-
-
-  ygm::comm                       &m_comm;
-  /** @todo the default bag uses an std::vector as storage, we'll need a few things to do the oversized version. 
-   * My initial thoughts will be the following:
-   * 1) std::fstream object to write to a file
-   * 2) size_t local_size to keep track of the number of collective items in the local rank's files
-   * 3) size_t cur_size to keep track of the number of items in the current file
-   * 4) size_t threshold to keep track of the number of items before we write to a new file
-   * 5) base_filename to keep track of the file name
-   * 6) base_directory to keep track of the directory
-   * 7) size_t file_number to keep track of the number of files we've created
-   * 8) either std::set or std::vector to keep track of the active files, theres a chance we end up having to rewrite a
-   *    file which would require removing the existing one if we update in place. We can think about it
-   * 
-   * Might need more or less than the above, this is just initial thoughts/design
-  
-  ---This is the original code---
-  std::vector<value_type>          m_local_bag;
-  */
-  typename ygm::ygm_ptr<self_type> pthis;
+  std::string                       m_base_filename;
+  typename ygm::ygm_ptr<self_type>  pthis;
 };
 
 }  // namespace ygm::container
