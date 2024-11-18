@@ -76,13 +76,11 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   };
   
   oversized_bag(ygm::comm &comm) : m_comm(comm), pthis(this), partitioner(comm) {
-    open_new_file();
     pthis.check(m_comm);
   }
 
   oversized_bag(ygm::comm &comm, std::initializer_list<Item> l)
       : m_comm(comm), pthis(this), partitioner(comm) {
-    open_new_file();
     pthis.check(m_comm);
     if (m_comm.rank0()) {
       for (const Item &i : l) {
@@ -98,7 +96,6 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
    */
   oversized_bag(ygm::comm &comm, std::string dir)
       : m_comm(comm), pthis(this), partitioner(comm) {
-    open_new_file();
     pthis.check(m_comm);
     /**
      * @todo Implement this
@@ -111,7 +108,6 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       const STLContainer &cont) requires detail::STLContainer<STLContainer> &&
       std::convertible_to<typename STLContainer::value_type, Item>
       : m_comm(comm), pthis(this), partitioner(comm) {
-    open_new_file();
     pthis.check(m_comm);
 
     for (const Item &i : cont) {
@@ -125,7 +121,6 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       const YGMContainer &yc) requires detail::HasForAll<YGMContainer> &&
       detail::SingleItemTuple<typename YGMContainer::for_all_args>
       : m_comm(comm), pthis(this), partitioner(comm) {
-    open_new_file();
     pthis.check(m_comm);
 
     yc.for_all([this](const Item &value) { this->async_insert(value); });
@@ -145,6 +140,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     pthis.check(m_comm);
   }
 
+  /** @todo */
   oversized_bag(self_type &&other) noexcept
       : m_comm(other.comm()),
         pthis(this),
@@ -190,15 +186,22 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
 
   /** @todo testing needed*/
   void local_insert(const Item &val) {
-    if (!m_files.back().active) {
+    if (m_files.empty() || !m_files.back().active) 
       open_new_file();
-    }
+
     m_files.back().in(val);
     m_local_size++;
   }
 
   /** @todo */
-  void local_clear() { /*---This is the original code--- m_local_bag.clear(); */ }
+  void local_clear() {
+    for (auto &file : m_files) {
+      file.file_io.close();
+      std::filesystem::remove(file.file_io);
+    }
+    m_files.clear();
+    m_local_size = 0;
+  }
 
   /** @todo testing needed */
   size_t local_size() const { m_local_size; }
@@ -232,26 +235,8 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
           temp_storage.push_back(temp);
         }
       }
-
-      file.file_io.seekg(0, std::ios::beg);
-      for (auto &item : temp_storage) {
-        file.in(item);
-      }
-      /** @todo this section may or may not be needed, its a bit expensive but it applies the function on
-       * all the items in the file. Becausee the function could modify the contents stored we need to re-write
-       * the items back into the file. For the moment, I'm using filesystem::remove() to delete the file, there
-       * may be a better way to do this perfomance wise. The worry from seeking back the the start of the file is
-       * in hte case an item had a std::vector or other container as a member, the size of the vector could drastically
-       * shrink, then when we write back to the file there is data left at the end. this might be fixed by adding an EOF
-       * character to the end of the file, then additional writes occur it would overwrite the entirety of the stale data.
-       */
-      std::string fname = generate_filename()
-      file.file_io.close();
-      std::filesystem::remove(fname);
-      file.file_io.open(fname, std::ios::binary);
-      file.size = 0;
-      file.in  = cereal::BinaryInputArchive(file.file_io);
-      file.out = cereal::BinaryOutputArchive(file.file_io);
+      vector_from_file(file.id, temp_storage);
+      reset_file(temp_storage);
       temp_storage.clear();
     }
   }
@@ -277,22 +262,18 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     std::ofstream os(rank_fname, std::ios::binary);
     cereal::JSONOutputArchive oarchive(os);
     for (auto &file : m_files) {
-      file.file_io.seekg(0, std::ios::beg);
-      while(file.file_io.peek() != EOF) {
-        Item temp;
-        file.in(temp);
-        /**
-         * @todo I'm not sure if this is the correct way to serialize this as JSON. The issue will be we are serializing
-         * potentially huge quantities of data. In the regular bag example everything can likely be stored in a single
-         * file, for our cases though we might need to see if we can attatch not only the comm_size, but also the file.id
-         * as it may not be possible to store the entirety of data in memory when we try and deserialize it.
-         */
-        oarchive(temp, m_comm.size());
-      }
+      vector_from_file(file.id, temp_storage);
+      /**
+       * @todo I'm not sure if this is the correct way to serialize this as JSON. The issue will be we are serializing
+       * potentially huge quantities of data. In the regular bag example everything can likely be stored in a single
+       * file, for our cases though we might need to see if we can attatch not only the comm_size, but also the file.id
+       * as it may not be possible to store the entirety of data in memory when we try and deserialize it.
+       */
+      oarchive(temp_storage, m_comm.size());
     }
   }
 
-  /** @todo */  
+  /** @todo testing needed */  
   void deserialize(const std::string &fname) {
     /*---This is the original code---
     m_comm.barrier();
@@ -426,7 +407,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   detail::round_robin_partitioner partitioner;
 
  private:
-   /** @todo */
+   /** @todo testing needed */
   std::vector<value_type> local_pop(int n) {
     /*---This is the original code---
     YGM_ASSERT_RELEASE(n <= local_size());
@@ -438,23 +419,80 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     m_local_bag.resize(new_size);
     return ret;
     */
+    YGM_ASSERT_RELEASE(n <= local_size());
+    std::vector<value_type> ret;
+    std::vector<value_type> temp_storage;
+
+    vector_from_file(m_files.end(), temp_storage);
+    size_t new_size  = m_local_size - n;
+    auto pop_start = temp_storage.begin() + new_size;
+
+    ret.assign(pop_start, temp_storage.end());
+    reset_file(temp_storage);
+    vector_to_file(m_files.back(), temp_storage);
+    m_local_size = new_size;
+    return ret;
   }
 
-  /** @todo */
-  void local_swap(self_type &other) { /* ---This is the original code--- m_local_bag.swap(other.m_local_bag); */ }
+  /** @todo testing needed*/
+  void local_swap(self_type &other) { 
+    /* ---This is the original code--- m_local_bag.swap(other.m_local_bag); */
+    this->m_files.swap(other.m_files); 
+    std::swap(this->m_local_size, other.m_local_size);
+    std::swap(this->m_base_filename, other.m_base_filename);
+  }
 
   inline void open_new_file() {
-    m_files.push_back(ygm_file(generate_filename(), m_files.size()));
+    m_files.push_back(ygm_file(generate_filename(m_files.size), m_files.size()));
   }
 
-  inline std::string generate_filename() const {
-    return std::string(m_base_filename + std::string(this->m_comm.rank()) + "_" + std::to_string(m_files.size()));
+  inline void vector_from_file(ygm_file &file, std::vector<Item>& storage) {
+    file.file_io.seekg(0, std::ios::beg);
+    while(file.file_io.peek() != EOF) {
+      Item temp;
+      if (file.out(temp)) {
+        storage.push_back(temp);
+      }
+    }
+  }
+
+  inline void vector_to_file(ygm_file &file, std::vector<Item>& storage) {
+    file.file_io.seekg(0, std::ios::beg);
+    while(file.file_io.peek() != EOF) {
+      Item temp;
+      local_insert(temp);
+    }
+  }
+
+  /** @todo this section may or may not be needed, its a bit expensive but it applies the function on
+   * all the items in the file. Becausee the function could modify the contents stored we need to re-write
+   * the items back into the file. For the moment, I'm using filesystem::remove() to delete the file, there
+   * may be a better way to do this perfomance wise. The worry from seeking back the the start of the file is
+   * in hte case an item had a std::vector or other container as a member, the size of the vector could drastically
+   * shrink, then when we write back to the file there is data left at the end. this might be fixed by adding an EOF
+   * character to the end of the file, then additional writes occur it would overwrite the entirety of the stale data.
+   */
+  inline void reset_file(std::vector<Item>& storage) {
+    auto cur_file = m_files.back();
+    std::string fname = generate_filename(file.id);
+    cur_file.back.file_io.close();
+    std::filesystem::remove(fname);
+    cur_file.file_io.open(fname, std::ios::binary);
+    cur_file.size = 0;
+    cur_file.in  = cereal::BinaryInputArchive(cur_file.file_io);
+    cur_file.out = cereal::BinaryOutputArchive(cur_file.file_io);
+    for (auto &item : storage) {
+      cur_file.in(item);
+    }
+  }
+
+  inline std::string generate_filename(size_t id) const {
+    return std::string(m_base_filename + std::string(this->m_comm.rank()) + "_" + std::to_string(id));
   }
 
   ygm::comm                        &m_comm;
   std::vector<ygm_file>             m_files; 
   size_t                            m_local_size;
-  size_t                            m_threshold;
 
   std::string                       m_base_filename;
   typename ygm::ygm_ptr<self_type>  pthis;
