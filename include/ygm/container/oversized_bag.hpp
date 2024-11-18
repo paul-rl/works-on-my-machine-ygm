@@ -37,12 +37,13 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
 
 
   class ygm_file {
-    static const m_threshold = 1000000; //set to 1 million for now, we should let this be configurable
-  public:
+   public:
+    static m_threshold = 1000000; //set to 1 million for now, we should let this be configurable
+
     std::fstream                    file_io;
     size_t id()   { return m_id; }
     size_t size() { return m_size; }
-    bool active() { return m_active; }
+    bool isactive() { return m_active; }
 
     ygm_file(std::string filename, size_t file_id) : 
               file_io(filename, std::ios::binary), out(file_io), in(file_io), 
@@ -134,8 +135,25 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     pthis.check(m_comm);
   }
 
+  oversized_bag(ygm::comm &comm, size_t threshold) : m_comm(comm), pthis(this), partitioner(comm) {
+    pthis.check(m_comm);
+    set_threshold(threshold)
+  }
+
   oversized_bag(ygm::comm &comm, std::initializer_list<Item> l)
       : m_comm(comm), pthis(this), partitioner(comm) {
+    pthis.check(m_comm);
+    if (m_comm.rank0()) {
+      for (const Item &i : l) {
+        async_insert(i);
+      }
+    }
+    m_comm.barrier();
+  }
+
+  oversized_bag(ygm::comm &comm, std::initializer_list<Item> l, size_t threshold)
+      : m_comm(comm), pthis(this), partitioner(comm) {
+    set_threshold(threshold);
     pthis.check(m_comm);
     if (m_comm.rank0()) {
       for (const Item &i : l) {
@@ -151,6 +169,15 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
    */
   oversized_bag(ygm::comm &comm, std::string dir)
       : m_comm(comm), pthis(this), partitioner(comm) {
+    pthis.check(m_comm);
+    /**
+     * @todo Implement this
+     */
+  }
+
+  oversized_bag(ygm::comm &comm, std::string dir, size_t threshold)
+      : m_comm(comm), pthis(this), partitioner(comm) {
+    set_threshold(threshold);
     pthis.check(m_comm);
     /**
      * @todo Implement this
@@ -187,7 +214,12 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   /**
    * @todo we'll need to close all of the files we opened
    */
-  ~oversized_bag() { m_comm.barrier(); }
+  ~oversized_bag() { 
+    m_comm.barrier(); 
+    for (auto &file : m_files) {
+      file.file_io.close();
+    }
+  }
 
   /** @todo ----------------------------------------------unchanged---------------------------------------------- */
   oversized_bag(const self_type &other)  // If I remove const it compiles
@@ -209,11 +241,17 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
 
   /** @todo This might be hard to reimplement, we'll need to look at if we can swap on fstream object or if we'll have 
    * to swap data then have other.open() and this->open() to reopen the insert file
+   * 
+   * i think this would work? but im not entirely sure why we'd ever actually want to do a swap on an oversized bag
+   * it's set up to be file-backed so generally i'd assume we'd just want a massive collection. 
    */
   oversized_bag &operator=(self_type &&other) noexcept {
     /* ---This is the original code---
     std::swap(m_local_bag, other.m_local_bag);
     */
+    this->m_files.swap(other.m_files); 
+    std::swap(this->m_local_size, other.m_local_size);
+    std::swap(this->m_base_filename, other.m_base_filename);
     return *this;
   }
 
@@ -241,7 +279,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
 
   /** @todo testing needed*/
   void local_insert(const Item &val) {
-    if (m_files.empty() || !m_files.back().active) 
+    if (m_files.empty() || !m_files.back().isactive()) 
       open_new_file();
 
     m_files.back().in(val);
@@ -265,7 +303,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   size_t local_count(const value_type &val) const {
     size_t count = 0;
     for (auto &file : m_files) {
-      if (file.active) {
+      if (file.isactive()) {
         file.file_io.seekg(0, std::ios::beg);
         while(file.file_io.peek() != EOF) {
           Item temp;
@@ -442,6 +480,8 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   }
 
   detail::round_robin_partitioner partitioner;
+
+  void set_threshold(size_t thresh) { ygm_file::m_threshold = thresh; }
 
  private:
    /** @todo testing needed */
