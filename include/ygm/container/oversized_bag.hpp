@@ -38,9 +38,10 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
 
   class ygm_file {
    public:
-    static m_threshold = 1000000; //set to 1 million for now, we should let this be configurable
+    static m_threshold = 1000000; 
 
     std::fstream                    file_io;
+
     size_t id()   { return m_id; }
     size_t size() { return m_size; }
     bool isactive() { return m_active; }
