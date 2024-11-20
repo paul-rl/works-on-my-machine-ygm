@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <string>
 #include <fstream>
 #include <filesystem>
 #include <cereal/archives/binary.hpp>
@@ -36,14 +37,14 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   using size_type      = size_t;
   using for_all_args   = std::tuple<Item>;
   using container_type = ygm::container::bag_tag;
-
-
+  
   class ygm_file {
    public:
     static size_t       file_threshold;
     static size_t       file_rank;
     static std::string  file_base_filename;
-    std::fstream                    m_file_io;
+
+    std::fstream        m_file_io;
 
     size_t id() const  { return m_id; }
     size_t size() const { return m_size; }
@@ -54,6 +55,31 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
               m_id(file_id), m_size(0), m_active(true) {}
     
     ~ygm_file() { if (open()) m_file_io.close(); }
+
+    ygm_file(const ygm_file &other)  // If I remove const it compiles
+        : m_id(other.m_id), m_size(other.m_size), m_active(other.m_active) {
+      if(m_active) m_file_io = std::fstream(generate_filename(m_id), std::ios::binary);
+    }
+
+    /** @todo */
+    ygm_file(ygm_file &&other) noexcept
+        : m_id(other.m_id),
+          m_size(other.m_size),
+          m_active(other.m_active) {
+      if(m_active) m_file_io = std::fstream(generate_filename(m_id), std::ios::binary);
+    }
+
+    ygm_file &operator=(const ygm_file &other) { return *this = ygm_file(other); }
+
+    ygm_file &operator=(ygm_file &&other) noexcept {
+      std::swap(m_file_io, other.m_file_io);
+      std::swap(m_id, other.m_id);
+      std::swap(m_size, other.m_size);
+      std::swap(m_active, other.m_active);
+      return *this;
+    }
+
+
 
     bool in(Item &data) {
       if (!m_active) return false;
@@ -397,7 +423,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     std::string   rank_fname = fname + std::to_string(m_comm.rank());
     std::ofstream os(rank_fname, std::ios::binary);
     cereal::JSONOutputArchive oarchive(os);
-    std::vector<Item> temp_storage;
+
     for (auto &file : m_files) {
       file.vector_from_file(temp_storage);
       /**
