@@ -42,31 +42,32 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     size_t       file_threshold;
     int          file_rank;
     std::string  file_base_filename;
+    std::string  file_base_dir = "";
+
 
     inline std::string generate_filename(size_t id) const {
-      return std::string(file_base_filename + "_" + std::to_string(file_rank) + "_" + std::to_string(id));
+      return std::string(file_base_dir + file_base_filename + "_" + std::to_string(file_rank) + "_" + std::to_string(id) + ".binary_archive");
     }
   };
   
   class ygm_file {
    public:
 
-    std::fstream        m_file_io;
-
-    size_t id() const  { return m_id; }
-    size_t size() const { return m_size; }
-    bool open() const { return m_active; }
 
     ygm_file(file_base_info base_file, size_t file_id) : 
-              m_id(file_id), m_size(0), m_active(true), m_file_info(base_file) {
-                m_file_io = std::fstream(m_file_info.generate_filename(m_id), std::ios::binary);
-              }
+              m_id(file_id), m_size(0), m_active(true), m_file_info(base_file),
+              m_file_io(std::fstream(m_file_info.generate_filename(m_id), std::ios::in | std::ios::out | std::ios::app | std::ios::binary)) {
+      check_file_errors();
+    }
     
-    ~ygm_file() { if (open()) m_file_io.close(); }
+    ~ygm_file() { if (m_file_io.is_open()) m_file_io.close(); }
 
     ygm_file(const ygm_file &other)  // If I remove const it compiles
         : m_id(other.m_id), m_size(other.m_size), m_active(other.m_active), m_file_info(other.m_file_info) {  
-      if(m_active) m_file_io = std::fstream(m_file_info.generate_filename(m_id), std::ios::binary);
+      if(m_active) {
+        m_file_io = std::fstream(m_file_info.generate_filename(m_id), std::ios::in | std::ios::out | std::ios::app | std::ios::binary);
+        check_file_errors();
+      }
     }
 
     /** @todo */
@@ -75,7 +76,10 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
           m_size(other.m_size),
           m_active(other.m_active),
           m_file_info(other.m_file_info) {
-      if(m_active) m_file_io = std::fstream(m_file_info.generate_filename(m_id), std::ios::binary);
+      if(m_active) {
+        m_file_io = std::fstream(m_file_info.generate_filename(m_id), std::ios::in | std::ios::out | std::ios::app | std::ios::binary);
+        check_file_errors();
+      }
     }
 
     ygm_file &operator=(const ygm_file &other) { return *this = ygm_file(other); }
@@ -89,15 +93,28 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       return *this;
     }
 
+    size_t id() const  { return m_id; }
+    size_t size() const { return m_size; }
+    bool isopen() const { return m_active; }
 
+    inline void open() {
+      if(!m_file_io.is_open())
+        m_file_io.open(m_file_info.generate_filename(m_id), std::ios::in | std::ios::out | std::ios::app | std::ios::binary);
+      m_active = true;
+    }
 
-    bool in(Item &data) {
+    inline void close() {
+      if(m_file_io.is_open())
+        m_file_io.close();
+      m_active = false;
+    }
+
+    bool to_file(const Item &data) {
+      YGM_ASSERT_RELEASE(m_file_io.is_open());
       if (!m_active) return false;
-      if (!m_active) return false;
-
       if (!m_file_io.eof()) m_file_io.seekg(0, std::ios::end);
       
-      cereal::BinaryInputArchive iarchive(m_file_io);
+      cereal::BinaryOutputArchive iarchive(m_file_io);
       iarchive(data);
       m_size++;
 
@@ -109,11 +126,12 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       return true;
     }
 
-    bool out(const Item &data) {
+    bool from_file(Item &data) {
+      YGM_ASSERT_RELEASE(m_file_io.is_open());
       if (m_file_io.peek() == EOF) return false;
       else {
-        cereal::BinaryOutputArchive out(m_file_io);
-        out(data);
+        cereal::BinaryInputArchive iarchive(m_file_io);
+        iarchive(data);
         return true;
       }
     }
@@ -155,7 +173,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       std::string fname = m_file_info.generate_filename(m_id);
       m_file_io.close();
       std::filesystem::remove(fname);
-      m_file_io.open(fname, std::ios::binary);
+      m_file_io.open(fname, std::ios::in | std::ios::out | std::ios::binary);
       cereal::BinaryOutputArchive oarchive(m_file_io);
       m_size = 0;
 
@@ -165,28 +183,36 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       }
     }
 
-    inline void close() {
-      m_file_io.close();
-      m_active = false;
-    }
+    void check_file_errors() {
+      if (!m_file_io.is_open()) {
+        throw std::runtime_error(std::string("File failed to open: " + m_file_info.generate_filename(m_id) + " " + std::strerror(errno)));
+      }
 
-    inline void reopen() {
-      m_file_io.open(m_file_info.generate_filename(m_id), std::ios::binary);
-      m_active = true;
-    }
+      if (m_file_io.fail()) {
+        throw std::runtime_error(std::string("File failed to open: " + m_file_info.generate_filename(m_id) + " " + std::strerror(errno)));
+      }
 
+      if (m_file_io.bad()) {
+        throw std::runtime_error(std::string("File failed to open with badbit set: " + m_file_info.generate_filename(m_id) + " " + std::strerror(errno)));
+      }
+    }
    private:
     size_t                          m_id;
     size_t                          m_size;
     bool                            m_active;
     file_base_info                 &m_file_info;
+   public:
+    std::fstream                    m_file_io;
+
   };
   
-  oversized_bag(ygm::comm &comm) : m_comm(comm), pthis(this), partitioner(comm), m_file_info{DEFAULT_THRESHOLD, comm.rank(), "oversized_bag"} {
+  oversized_bag(ygm::comm &comm) : m_comm(comm), pthis(this), partitioner(comm),
+                                  m_file_info{DEFAULT_THRESHOLD, comm.rank(), "oversized_bag"} {
     pthis.check(m_comm);
   }
 
-  oversized_bag(ygm::comm &comm, size_t file_threshold) : m_comm(comm), pthis(this), partitioner(comm), m_file_info{file_threshold, comm.rank(), "oversized_bag"} {
+  oversized_bag(ygm::comm &comm, size_t file_threshold) : m_comm(comm), pthis(this), partitioner(comm), 
+                                  m_file_info{file_threshold, comm.rank(), "oversized_bag"} {
     pthis.check(m_comm);
   }
 
@@ -332,10 +358,10 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
 
   /** @todo testing needed*/
   void local_insert(const Item &val) {
-    if (m_files.empty() || !m_files.back().open()) 
+    if (m_files.empty() || !m_files.back().isopen()) 
       open_new_file();
 
-    m_files.back().out(val);
+    m_files.back().to_file(val);
     m_local_size++;
   }
 
@@ -362,7 +388,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
         file.m_file_io.seekg(0, std::ios::beg);
         while(file.m_file_io.peek() != EOF) {
           Item temp;
-          if (file.in(temp)) {
+          if (file.from_file(temp)) {
             if (temp == val) count++;
           }
         }
@@ -378,14 +404,14 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
    std::vector<Item> temp_storage;
    bool temp_open = false;
     for (auto &file : m_files) {
-      if(!file.open()) {
-        file.reopen();
+      if(!file.isopen()) {
+        file.open();
         temp_open = true;
       }
       file.m_file_io.seekg(0, std::ios::beg);
       while(file.m_file_io.peek() != EOF) {
         Item temp;
-        if (file.in(temp)) {
+        if (file.from_file(temp)) {
           fn(temp);
           temp_storage.push_back(temp);
         }
@@ -405,7 +431,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   template <typename Function>
   void local_for_all(Function fn) const {
     for (auto &file : m_files) {
-      std::ifstream is(m_file_info.generate_filename(file.id()), std::ios::binary);
+      std::ifstream is(m_file_info.generate_filename(file.id()), std::ios::in | std::ios::binary);
       cereal::BinaryInputArchive iarchive(is);
       while (is.peek() != EOF) {
         Item temp;
@@ -420,7 +446,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     m_comm.barrier();
     std::vector<Item> temp_storage;
     std::string   rank_fname = fname + std::to_string(m_comm.rank());
-    std::ofstream os(rank_fname, std::ios::binary);
+    std::ofstream os(rank_fname, std::ios::out | std::ios::binary);
     cereal::JSONOutputArchive oarchive(os);
 
     for (auto &file : m_files) {
@@ -439,7 +465,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   void deserialize(const std::string &fname) {
     m_comm.barrier();
     std::string   rank_fname = fname + std::to_string(m_comm.rank());
-    std::ifstream is(rank_fname, std::ios::binary);
+    std::ifstream is(rank_fname, std::ios::in | std::ios::binary);
     /**
      * @todo We should look at if we can split things by file id instead of just the comm_size given.
      */
