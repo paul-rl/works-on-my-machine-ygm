@@ -53,7 +53,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     ~ygm_file() { if (file_io.is_open()) file_io.close(); }
 
     bool in(Item &data) {
-      if (!active) return false;
+      if (!m_active) return false;
 
       if (!file_io.eof) file_io.seekg(0, std::ios::end);
       
@@ -61,7 +61,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       size++;
 
       if (size > m_threshold)
-        active = false;
+        m_active = false;
 
       return true;
     }
@@ -314,6 +314,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
         }
       }
     }
+    return count;
   }
 
   /** @todo testing needed */
@@ -352,6 +353,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   /** @todo testing needed */  
   void serialize(const std::string &fname) {
     m_comm.barrier();
+    std::vector<Item> temp_storage;
     std::string   rank_fname = fname + std::to_string(m_comm.rank());
     std::ofstream os(rank_fname, std::ios::binary);
     cereal::JSONOutputArchive oarchive(os);
