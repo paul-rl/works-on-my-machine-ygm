@@ -39,9 +39,9 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   using container_type = ygm::container::bag_tag;
 
   struct file_base_info {
-    size_t       file_threshold;
+    size_t       file_threshold = 10000000;
     int          file_rank;
-    std::string  file_base_filename;
+    std::string  file_base_filename = "oversized_bag";
     std::string  file_base_dir = "";
 
 
@@ -52,8 +52,6 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   
   class ygm_file {
    public:
-
-
     ygm_file(file_base_info base_file, size_t file_id) : 
               m_id(file_id), m_size(0), m_active(true), m_file_info(base_file),
               m_file_io(std::fstream(m_file_info.generate_filename(m_id), std::ios::in | std::ios::out | std::ios::app | std::ios::binary)) {
@@ -168,6 +166,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
      * character to the end of the file, then additional writes occur it would overwrite the entirety of the stale data.
      */
     void write_vector_back(std::vector<Item>& storage) {
+      if (storage.size() > m_file_info.file_threshold) std::cout << "storage: " << storage.size() << " threshold: " << m_file_info.file_threshold << std::endl;
       YGM_ASSERT_RELEASE(storage.size() <= m_file_info.file_threshold);
 
       std::string fname = m_file_info.generate_filename(m_id);
@@ -254,7 +253,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   }
 
   oversized_bag(ygm::comm &comm, std::string dir, size_t file_threshold)
-      : m_comm(comm), pthis(this), partitioner(comm), m_file_info{file_threshold, comm.rank(), dir} {
+      : m_comm(comm), pthis(this), partitioner(comm), m_file_info{file_threshold, comm.rank() } {
     pthis.check(m_comm);
 
     /**
