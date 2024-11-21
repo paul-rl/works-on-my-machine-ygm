@@ -394,7 +394,6 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       }
     }
     return count;
-    return count;
   }
 
   /** @todo testing needed */
@@ -429,14 +428,16 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   /** @todo testing needed */
   template <typename Function>
   void local_for_all(Function fn) const {
+    std::ifstream is;
     for (auto &file : m_files) {
-      std::ifstream is(m_file_info.generate_filename(file.id()), std::ios::in | std::ios::binary);
+      is.open(m_file_info.generate_filename(file.id()), std::ios::in | std::ios::binary);
       cereal::BinaryInputArchive iarchive(is);
       while (is.peek() != EOF) {
         Item temp;
         iarchive(temp);
         fn(temp);
       }
+      is.close();
     }
   }
   
@@ -584,7 +585,15 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     std::vector<value_type> ret;
     std::vector<value_type> temp_storage;
 
-    vector_from_file(m_files.end(), temp_storage);
+    while(temp_storage.size() < n) {
+      vector_from_file(m_files.back(), temp_storage);
+      if(temp_storage.size() < n) {
+        m_files.back().close();
+        m_files.pop_back();
+        m_files.back().open();
+      }
+    }
+
     size_t new_size  = m_local_size - n;
     auto pop_start = temp_storage.begin() + new_size;
 
