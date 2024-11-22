@@ -167,7 +167,6 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
      * character to the end of the file, then additional writes occur it would overwrite the entirety of the stale data.
      */
     void write_vector_back(std::vector<Item>& storage) {
-      if (storage.size() > m_file_info.file_threshold) std::cout << "storage: " << storage.size() << " threshold: " << m_file_info.file_threshold << std::endl;
       YGM_ASSERT_RELEASE(storage.size() <= m_file_info.file_threshold);
 
       std::string fname = m_file_info.generate_filename(m_id);
@@ -441,6 +440,10 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     std::ifstream is;
     for (auto &file : m_files) {
       is.open(m_file_info.generate_filename(file.id()), std::ios::in | std::ios::binary);
+      if (!is.is_open()) {
+        m_comm.cerr0("Failed to open file: " + m_file_info.generate_filename(file.id()));
+        return;
+      }
       cereal::BinaryInputArchive iarchive(is);
       while (is.peek() != EOF) {
         Item temp;
@@ -596,7 +599,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     std::vector<value_type> temp_storage;
 
     while(temp_storage.size() < n) {
-      vector_from_file(m_files.back(), temp_storage);
+      m_files.back().vector_from_file(temp_storage);
       if(temp_storage.size() < n) {
         m_files.back().close();
         m_files.pop_back();
@@ -608,7 +611,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     auto pop_start = temp_storage.begin() + new_size;
 
     ret.assign(pop_start, temp_storage.end());
-    write_vector_back(temp_storage);
+    m_files.back().write_vector_back(temp_storage);
     m_local_size = new_size;
     return ret;
   }
@@ -617,7 +620,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   void local_swap(self_type &other) { 
     this->m_files.swap(other.m_files); 
     std::swap(this->m_local_size, other.m_local_size);
-    std::swap(this->m_base_filename, other.m_base_filename);
+    std::swap(this->m_file_info, other.m_file_info);
   }
 
   inline void open_new_file() {
