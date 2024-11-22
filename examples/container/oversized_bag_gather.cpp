@@ -59,6 +59,6 @@ int main(int argc, char **argv) {
   //   }
   //   world.barrier();
   // }
-
+  bbag.clear();
   return 0;
 }
