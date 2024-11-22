@@ -116,6 +116,12 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       m_active = false;
     }
 
+    inline void delete_file() {
+      if(m_file_io.is_open())
+        m_file_io.close();
+      std::filesystem::remove(m_file_info.generate_filename(m_id));
+    }
+
     bool to_file(const Item &data) {
       YGM_ASSERT_RELEASE(m_file_io.is_open());
       if (!m_active) return false;
@@ -388,7 +394,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       if(file.isopen()) {
         file.m_file_io.close();
       }
-      std::filesystem::remove(file.m_file_io);
+      file.delete_file();
     }
     m_files.clear();
     m_local_size = 0;
@@ -424,17 +430,11 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
         file.open();
         temp_open = true;
       }
-      
-      file.m_file_io.seekg(0, std::ios::beg);
-      while(file.m_file_io.peek() != EOF) {
-        Item temp;
-        if (file.from_file(temp)) {
-          fn(temp);
-          temp_storage.push_back(temp);
-        }
-      }
 
       file.vector_from_file(temp_storage);
+      for(auto &item : temp_storage) {
+        fn(item);
+      }
       file.write_vector_back(temp_storage);
       temp_storage.clear();
 
@@ -599,8 +599,6 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   }
 
   detail::round_robin_partitioner partitioner;
-
-
 
  private:
    /** @todo testing needed */
