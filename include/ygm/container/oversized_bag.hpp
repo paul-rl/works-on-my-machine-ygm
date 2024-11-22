@@ -424,6 +424,15 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
         file.open();
         temp_open = true;
       }
+      
+      file.m_file_io.seekg(0, std::ios::beg);
+      while(file.m_file_io.peek() != EOF) {
+        Item temp;
+        if (file.from_file(temp)) {
+          fn(temp);
+          temp_storage.push_back(temp);
+        }
+      }
 
       file.vector_from_file(temp_storage);
       file.write_vector_back(temp_storage);
