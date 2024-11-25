@@ -180,8 +180,8 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
      * shrink, then when we write back to the file there is data left at the end. this might be fixed by adding an EOF
      * character to the end of the file, then additional writes occur it would overwrite the entirety of the stale data.
      */
-    void write_vector_back(std::vector<Item>& storage) {
-      YGM_ASSERT_RELEASE(storage.size() <= m_file_info.file_threshold);
+    void write_vector_back(std::vector<Item>::iterator begin, std::vector<Item>::iterator end) {
+      YGM_ASSERT_RELEASE(std::distance(begin, end) <= m_file_info.file_threshold);
 
       std::string fname = m_file_info.generate_filename(m_id);
       m_file_io.close();
@@ -190,10 +190,10 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       check_file_errors();
       cereal::BinaryOutputArchive oarchive(m_file_io);
       m_size = 0;
-
-      for (auto &item : storage) {
-        oarchive(item);
+      while(begin != end) {
+        oarchive(*begin);
         m_size++;
+        begin++;
       }
     }
 
@@ -435,7 +435,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       for(auto &item : temp_storage) {
         fn(item);
       }
-      file.write_vector_back(temp_storage);
+      file.write_vector_back(temp_storage.begin(), temp_storage.end());
       temp_storage.clear();
 
       if(temp_open) {
@@ -511,7 +511,6 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
 
   /** @todo */  
   void rebalance() {
-    /*---This is the original code---
     auto global_size = this->size();  // includes barrier
 
     // Find current rank's prefix val and desired target size
@@ -551,7 +550,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     }
 
     m_comm.barrier();
-    */
+    
   }
 
   /** @todo */  
@@ -610,7 +609,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     while(temp_storage.size() < n) {
       m_files.back().vector_from_file(temp_storage);
       if(temp_storage.size() < n) {
-        m_files.back().close();
+        m_files.back().remove_file();
         m_files.pop_back();
         m_files.back().open();
       }
@@ -620,7 +619,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     auto pop_start = temp_storage.begin() + new_size;
 
     ret.assign(pop_start, temp_storage.end());
-    m_files.back().write_vector_back(temp_storage);
+    m_files.back().write_vector_back(temp_storage.begin(), temp_storage.end() - n);
     m_local_size = new_size;
     return ret;
   }
