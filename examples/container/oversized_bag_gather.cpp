@@ -48,6 +48,11 @@ int main(int argc, char **argv) {
   }
 
   world.barrier();
+  world.barrier();
+
+  size_t global_size = bbag.size();
+  world.cout0("global size : " + std::to_string(bbag.size()) + "\n");
+  world.barrier();
   // std::vector<std::string> all_data_2;
   // bbag.gather(all_data_2);
   // for(int i = 0; i < world.size(); i++) {
@@ -59,6 +64,9 @@ int main(int argc, char **argv) {
   //   }
   //   world.barrier();
   // }
+  size_t dog_count = bbag.count(std::string("dog"));
+  world.cout0("dog has count: " + std::to_string(dog_count));
+  
   bbag.clear();
   return 0;
 }
