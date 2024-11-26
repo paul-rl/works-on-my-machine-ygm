@@ -61,6 +61,13 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     ygm_file(file_base_info& base_file, size_t file_id) : 
               m_id(file_id), m_size(0), m_active(true), m_file_info(base_file),
               m_file_io(std::fstream(m_file_info.generate_filename(m_id), std::ios::in | std::ios::out | std::ios::app | std::ios::binary)) {
+      load_existing_files();
+      check_file_errors();
+    }
+    ygm_file(file_base_info& base_file, size_t file_id, size_t file_size) : 
+              m_id(file_id), m_size(0), m_active(true), m_file_info(base_file),
+              m_file_io(std::fstream(m_file_info.generate_filename(m_id), std::ios::in | std::ios::out | std::ios::app | std::ios::binary)) {
+      load_existing_files();
       check_file_errors();
     }
     
@@ -70,6 +77,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
         : m_id(other.m_id), m_size(other.m_size), m_active(other.m_active), m_file_info(other.m_file_info) {  
       if(m_active) {
         m_file_io = std::fstream(m_file_info.generate_filename(m_id), std::ios::in | std::ios::out | std::ios::app | std::ios::binary);
+        load_existing_files();
         check_file_errors();
       }
     }
@@ -82,6 +90,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
           m_file_info(other.m_file_info) {
       if(m_active) {
         m_file_io = std::fstream(m_file_info.generate_filename(m_id), std::ios::in | std::ios::out | std::ios::app | std::ios::binary);
+        load_existing_files();
         check_file_errors();
       }
     }
@@ -597,6 +606,25 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   detail::round_robin_partitioner partitioner;
 
  private:
+
+  void load_existing_files() {
+    bool isValidFile = true;
+    int file_id = 0;
+    while(isValidFile) {
+      std::string file_name = m_file_info.generate_filename(file_id);
+      if(std::filesystem::exists(file_name)) {
+        std::ifstream is(file_name, std::ios::in | std::ios::binary);
+        ygm_file temp_file(m_file_info, file_id);
+        int items_in_file = temp_file.vector_from_file().size(); 
+        m_files.push_back(ygm_file(m_file_info, file_id, items_in_file)); // add this constructor to ygm_file
+        m_local_size += items_in_file;
+        file_id++;
+      } else {
+        isValidFile = false;
+      }
+    }
+  }
+
    /** @todo testing needed */
   std::vector<value_type> local_pop(int n) {
     YGM_ASSERT_RELEASE(n <= local_size());
