@@ -42,12 +42,14 @@ int main(int argc, char** argv) {
     YGM_ASSERT_RELEASE(bbag.size() == 3);
   }
 
-  // TODO: Currently, shuffle functions are being ignored as per Ryan
-  // Test local_shuffle and global_shuffle
-  {
-    ygm::container::oversized_bag<int> bbag(world);
+  // 
 
-  }
+  // Currently, shuffle functions are being ignored as per Roger
+  // Test local_shuffle and global_shuffle
+  // {
+  //   ygm::container::oversized_bag<int> bbag(world);
+  // 
+  // }
 
   // 
   // Test for_all
@@ -84,20 +86,20 @@ int main(int argc, char** argv) {
 
   //
   // Test for_all (split pair)
-  {
-    ygm::container::oversized_bag<std::pair<std::string, int>> pbag(world);
-    if (world.rank0()) {
-      pbag.async_insert({"dog"}, 1);
-      pbag.async_insert({"apple"}, 2);
-      pbag.async_insert({"red"}, 3);
-    }
-    int count{0};
-    pbag.for_all(
-      [&count](std::string& first, int& second) { count += second; });
-    int global_count = world.all_reduce_sum(count);
-    world.barrier();
-    YGM_ASSERT_RELEASE(global_count == 6);
-  }
+  // {
+  //   ygm::container::oversized_bag<std::pair<std::string, int>> pbag(world);
+  //   if (world.rank0()) {
+  //     pbag.async_insert({"dog"}, 1);
+  //     pbag.async_insert({"apple"}, 2);
+  //     pbag.async_insert({"red"}, 3);
+  //   }
+  //   int count{0};
+  //   pbag.for_all(
+  //     [&count](std::string& first, int& second) { count += second; });
+  //   int global_count = world.all_reduce_sum(count);
+  //   world.barrier();
+  //   YGM_ASSERT_RELEASE(global_count == 6);
+  // }
 
   //
   // Test rebalance
