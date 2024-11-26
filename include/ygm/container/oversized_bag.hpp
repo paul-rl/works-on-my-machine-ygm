@@ -153,7 +153,6 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       YGM_ASSERT_RELEASE(m_file_io.is_open());
   
       cereal::BinaryInputArchive iarchive(m_file_io);
-      m_file_io.seekg(0, std::ios::beg);
       while(m_file_io.peek() != EOF) {
         Item temp;
         iarchive(temp);
@@ -408,17 +407,12 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   /** @todo testing needed */
   size_t local_count(const value_type &val) const {
     size_t count = 0;
-    std::ifstream is;
-    for (auto &file : m_files) {
-      is.open(m_file_info.generate_filename(file.id()), std::ios::in | std::ios::binary);
-      is.seekg(0, std::ios::beg);
-      cereal::BinaryInputArchive iarchive(is);
-      while(is.peek() != EOF) {
-        Item temp;
-        iarchive(temp);
-        if (temp == val) count++;
-      }
-      is.close();
+    for (auto file : m_files) {
+      std::vector<Item> local_bag;
+      file.open();
+      file.vector_from_file(local_bag);
+      count += std::count(local_bag.begin(), local_bag.end(), val);
+      file.close();
     }
     return count;
   }
@@ -453,7 +447,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   void local_for_all(Function fn) const {
     std::ifstream is;
     for (auto &file : m_files) {
-      is.open(m_file_info.generate_filename(file.id()), std::ios::in | std::ios::binary);
+      is.open(m_file_info.generate_filename(file.id()), std::ios::in | std::ios::app | std::ios::binary);
       if (!is.is_open()) {
         m_comm.cerr0("Failed to open file: " + m_file_info.generate_filename(file.id()));
         return;
