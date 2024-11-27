@@ -93,16 +93,7 @@ int main(int argc, char** argv) {
         YGM_ASSERT_RELEASE(all_data.size() == 3);
       }
     }
-  }
-
-  //
-  // Test Rebalance
-  {
-    ygm::container::oversized_bag<std::string> bbag(world);
-    bbag.async_insert("begin", 0);
-    bbag.async_insert("end", world.size() - 1);
-    bbag.rebalance();
-    YGM_ASSERT_RELEASE(bbag.local_size() == 2);
+    bbag.clear();
   }
 
   // Currently, shuffle functions are being ignored as per Roger
@@ -126,6 +117,7 @@ int main(int argc, char** argv) {
     int global_count = world.all_reduce_sum(count);
     world.barrier();
     YGM_ASSERT_RELEASE(global_count == 3);
+    bbag.clear();
   }
 
   //
@@ -143,6 +135,7 @@ int main(int argc, char** argv) {
     int global_count = world.all_reduce_sum(count);
     world.barrier();
     YGM_ASSERT_RELEASE(global_count == 6);
+    bbag.clear();
   }
 
   //
@@ -170,6 +163,7 @@ int main(int argc, char** argv) {
     bbag.async_insert("end", world.size() - 1);
     bbag.rebalance();
     YGM_ASSERT_RELEASE(bbag.local_size() == 2);
+    bbag.clear();
   }
 
   //
@@ -192,6 +186,7 @@ int main(int argc, char** argv) {
     } else {
       YGM_ASSERT_RELEASE(bbag.local_size() == small_block_size);
     }
+    bbag.clear();
   }
 
   //
@@ -217,6 +212,7 @@ int main(int argc, char** argv) {
       YGM_ASSERT_RELEASE(*std::max_element(value_set.begin(), value_set.end()) ==
                      199);
     }
+    bbag.clear();
   }
 
 }
