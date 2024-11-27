@@ -160,7 +160,6 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
       while(m_file_io.peek() != EOF) {
         Item temp;
         iarchive(temp);
-        std::cout << temp << std::endl;
         storage.push_back(temp);
       }
       //YGM_ASSERT_RELEASE(storage.size() == m_size);
@@ -221,7 +220,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     bool                            m_active;
     file_base_info                 &m_file_info;
    public:
-    std::fstream                    &m_file_io;
+    std::fstream                    m_file_io;
 
   };
   
