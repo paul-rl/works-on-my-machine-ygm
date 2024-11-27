@@ -164,39 +164,39 @@ int main(int argc, char** argv) {
 
 
   // Test rebalance
-  // {
-  //   ygm::container::oversized_bag<std::string> bbag(world);
-  //   bbag.async_insert("begin", 0);
-  //   bbag.async_insert("end", world.size() - 1);
-  //   bbag.rebalance();
-  //   YGM_ASSERT_RELEASE(bbag.local_size() == 2);
-  // }
+  {
+    ygm::container::oversized_bag<std::string> bbag(world);
+    bbag.async_insert("begin", 0);
+    bbag.async_insert("end", world.size() - 1);
+    bbag.rebalance();
+    YGM_ASSERT_RELEASE(bbag.local_size() == 2);
+  }
 
   //
   // Test rebalance with non-standard rebalance sizes
-  //{
-  //  ygm::container::oversized_bag<std::string> bbag(world);
-  //  bbag.async_insert("middle", world.size() / 2);
-  //  bbag.async_insert("end", world.size() - 1);
-  //  if (world.rank0()) bbag.async_insert("middle", world.size() / 2);
-  //  bbag.rebalance();
-//
-  //  size_t target_size      = std::ceil((bbag.size() * 1.0) / world.size());
-  //  size_t remainder        = bbag.size() % world.size();
-  //  size_t small_block_size = bbag.size() / world.size();
-  //  size_t large_block_size =
-  //      bbag.size() / world.size() + (bbag.size() % world.size() > 0);
-//
-  //  if (world.rank() < remainder) {
-  //    YGM_ASSERT_RELEASE(bbag.local_size() == large_block_size);
-  //  } else {
-  //    YGM_ASSERT_RELEASE(bbag.local_size() == small_block_size);
-  //  }
-  //}
+  {
+    ygm::container::oversized_bag<std::string> bbag(world);
+    bbag.async_insert("middle", world.size() / 2);
+    bbag.async_insert("end", world.size() - 1);
+    if (world.rank0()) bbag.async_insert("middle", world.size() / 2);
+    bbag.rebalance();
+
+    size_t target_size      = std::ceil((bbag.size() * 1.0) / world.size());
+    size_t remainder        = bbag.size() % world.size();
+    size_t small_block_size = bbag.size() / world.size();
+    size_t large_block_size =
+        bbag.size() / world.size() + (bbag.size() % world.size() > 0);
+
+    if (world.rank() < remainder) {
+      YGM_ASSERT_RELEASE(bbag.local_size() == large_block_size);
+    } else {
+      YGM_ASSERT_RELEASE(bbag.local_size() == small_block_size);
+    }
+  }
 
   //
   // Test output data after rebalance
-  /* {
+  {
     ygm::container::oversized_bag<int> bbag(world);
     if (world.rank0()) {
       for (int i = 0; i < 100; i++) {
@@ -217,6 +217,6 @@ int main(int argc, char** argv) {
       YGM_ASSERT_RELEASE(*std::max_element(value_set.begin(), value_set.end()) ==
                      199);
     }
-  } */
+  }
 
 }
