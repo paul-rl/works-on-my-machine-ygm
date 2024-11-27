@@ -157,11 +157,9 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     void vector_from_file(std::vector<Item>& storage) {
       YGM_ASSERT_RELEASE(m_file_io.is_open());
       cereal::BinaryInputArchive iarchive(m_file_io);
-      m_file_io.seekg(0, std::ios::beg);
       while(m_file_io.peek() != EOF) {
         Item temp;
         iarchive(temp);
-        std::cout << temp << std::endl;
         storage.push_back(temp);
       }
       //YGM_ASSERT_RELEASE(storage.size() == m_size);
@@ -222,7 +220,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     bool                            m_active;
     file_base_info                 &m_file_info;
    public:
-    std::fstream                    &m_file_io;
+    std::fstream                    m_file_io;
 
   };
   
@@ -407,8 +405,10 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     m_local_size = 0;
   }
 
+  inline size_t num_local_files() const { return m_files.size(); }
+
   /** @todo testing needed */
-  size_t local_size() const { return m_local_size; }
+  inline size_t local_size() const { return m_local_size; }
 
   /** @todo testing needed */
   size_t local_count(const value_type &val) const {
@@ -464,7 +464,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
   void local_for_all(Function fn) const {
     std::ifstream is;
     for (auto &file : m_files) {
-      is.open(m_file_info.generate_filename(file.id()), std::ios::in | std::ios::binary);
+      is.open(m_file_info.generate_filename(file.id()), std::ios::in | std::ios::app | std::ios::binary);
       if (!is.is_open()) {
         throw std::runtime_error("Failed to open file: " + m_file_info.generate_filename(file.id()));
       }
@@ -642,7 +642,7 @@ class oversized_bag : public detail::base_async_insert_value<oversized_bag<Item>
     while(temp_storage.size() < n) {
       m_files.back().vector_from_file(temp_storage);
       if(temp_storage.size() < n) {
-        m_files.back().remove_file();
+        m_files.back().delete_file();
         m_files.pop_back();
         m_files.back().open();
       }
